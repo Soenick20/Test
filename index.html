@@ -71,6 +71,7 @@ body.touch.playing #touch{display:block}
 #tFire{right:calc(22px + env(safe-area-inset-right,0px));bottom:calc(210px + env(safe-area-inset-bottom,0px));width:92px;height:92px}
 #tGrap{right:calc(126px + env(safe-area-inset-right,0px));bottom:calc(206px + env(safe-area-inset-bottom,0px));background:var(--teal)}
 #tCut{right:calc(130px + env(safe-area-inset-right,0px));bottom:calc(292px + env(safe-area-inset-bottom,0px));width:56px;height:56px;font-size:11px;background:var(--bone)}
+#tOut{right:calc(92px + env(safe-area-inset-right,0px));top:calc(70px + env(safe-area-inset-top,0px));width:56px;height:56px;font-size:11px;background:var(--bone)}
 #tView{right:calc(22px + env(safe-area-inset-right,0px));top:calc(70px + env(safe-area-inset-top,0px));width:56px;height:56px;font-size:11px;background:var(--bone)}
 @media (max-width:640px){#mini{width:132px;height:132px}#info{font-size:12px;min-width:0}.spec span{font-size:14px}}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}#dmg{transition:none}}
@@ -92,7 +93,8 @@ body.touch.playing #touch{display:block}
   <div id="stick"><div id="knob"></div></div>
   <button class="tb" id="tFire">FIRE</button>
   <button class="tb" id="tGrap">HOOK</button>
-  <button class="tb" id="tCut">CUT</button>
+  <button class="tb" id="tCut">JUMP</button>
+  <button class="tb" id="tOut">EXIT</button>
   <button class="tb" id="tView">VIEW</button>
 </div>
 
@@ -100,27 +102,29 @@ body.touch.playing #touch{display:block}
   <div class="platecard">
     <div class="eyebrow">Proving ground 01 · frame field test</div>
     <h1>SCRAP<span>WALKER</span></h1>
-    <p class="lede">The drones took the cities. You walk out in a four-legged Bulwark frame, break what they hold and bring back scrap. The frame is built block by block: every hit chips it, every leg can be shot off. The pilot cannot.</p>
+    <p class="lede">The drones took the cities. You are the pilot: run to your Bulwark, climb through the hatch and squeeze in. It is a small, fast four-legged frame built block by block. Every hit chips it, every leg can be shot off. You cannot.</p>
     <div class="spec">
       <div><small>Frame</small><span>BULWARK-4</span></div>
-      <div><small>Locomotion</small><span>4 legs · 2-segment</span></div>
-      <div><small>Main gun</small><span>120 mm · 1.4 s reload</span></div>
+      <div><small>Locomotion</small><span>4 legs · 7–10 m/s</span></div>
+      <div><small>Main gun</small><span>75 mm · 0.9 s reload</span></div>
       <div><small>Grapples</small><span>2 × 65 m cable</span></div>
     </div>
     <div class="keys deskonly">
-      <kbd>W A S D</kbd><span>walk · turn hull</span>
+      <kbd>W A S D</kbd><span>run on foot · walk and turn the hull</span>
       <kbd>Q E</kbd><span>crab sideways</span>
       <kbd>Shift</kbd><span>long stride (4 legs only)</span>
       <kbd>Mouse</kbd><span>orbit camera · turret follows the crosshair</span>
       <kbd>L-click</kbd><span>fire main gun</span>
       <kbd>R-click / F</kbd><span>fire grapple · hold to reel in</span>
-      <kbd>Space</kbd><span>cut cables</span>
+      <kbd>Space</kbd><span>jump</span>
+      <kbd>X</kbd><span>cut cables</span>
+      <kbd>F · G</kbd><span>climb in (on foot) · climb out</span>
       <kbd>V</kbd><span>outside view / cockpit</span>
       <kbd class="dbg">1 2 3 4</kbd><span class="dbg">test: blow off leg FL FR BL BR</span>
       <kbd class="dbg">0 · H · N</kbd><span class="dbg">test: repair · hostiles on/off · spawn hound</span>
     </div>
     <div class="keys touchonly">
-      <span>Left stick walks and turns. Drag the right side of the screen to look. FIRE shoots, HOOK fires a grapple and reels while held, CUT drops cables, VIEW swaps the outside camera and the cockpit.</span>
+      <span>Left stick moves. Drag the right side of the screen to look. BOARD climbs in when you stand next to the frame, EXIT climbs out. FIRE shoots, HOOK fires a grapple and reels while held, JUMP jumps (or cuts cables while hooked), VIEW swaps the outside camera and the cockpit.</span>
     </div>
     <button class="go" id="goBtn" disabled>Enter cockpit</button>
     <div id="loading">Building proving ground…</div>
@@ -164,7 +168,8 @@ const WORLD = SX * VS;                // 96 m
 const MID = WORLD / 2;
 const OUTER_H = 6.6;
 const SEED = 8602;
-const RIDE = 2.75, THIGH = 2.9, SHIN = 3.5, ANKLE = 0.42, WALK = 4.4, TURN = 0.85, RELOAD = 1.5;
+const KS = 0.55;                       // mech scale: sized so a pilot barely fits inside
+const RIDE = 2.75 * KS, THIGH = 2.9 * KS, SHIN = 3.5 * KS, ANKLE = 0.42 * KS, HH = 0.9 * KS, WALK = 7.0, TURN = 2.1, RELOAD = 0.9;
 
 // ============================================================ MATERIALS (world voxels)
 const MATS = [null,
@@ -687,7 +692,7 @@ function updatePool(P, dt, collide) {
 function lin(hex) { _c.setHex(hex); return [_c.r, _c.g, _c.b]; }
 const CF = { spark: lin(0xffc25a), fire: lin(0xff7a1e), fire2: lin(0xffd27a), smoke: lin(0x3a3632), dust: lin(0x8f8576), red: lin(0xff3a2a), teal: lin(0x58e0c8) };
 function sparks(p, n, spd = 8, col = CF.spark) { for (let i = 0; i < n; i++) spawnP(fx, p.x, p.y, p.z, rnd(-1, 1) * spd, rnd(0, 1.2) * spd, rnd(-1, 1) * spd, 0.09, 0.03, rnd(0.25, 0.6), col[0], col[1], col[2], 1, 1.5); }
-function dust(p, n, spread = 1, col = CF.dust) { for (let i = 0; i < n; i++) spawnP(smoke, p.x + rnd(-spread, spread), p.y + rnd(0, 0.4), p.z + rnd(-spread, spread), rnd(-2, 2), rnd(0.3, 2), rnd(-2, 2), rnd(0.25, 0.5), rnd(0.8, 1.5), rnd(0.9, 1.8), col[0] * rnd(0.9, 1.1), col[1] * rnd(0.9, 1.1), col[2] * rnd(0.9, 1.1), -0.02, 2.2); }
+function dust(p, n, spread = 1, col = CF.dust, sz = 1) { for (let i = 0; i < n; i++) spawnP(smoke, p.x + rnd(-spread, spread), p.y + rnd(0, 0.4), p.z + rnd(-spread, spread), rnd(-2, 2), rnd(0.3, 2), rnd(-2, 2), rnd(0.25, 0.5) * sz, rnd(0.8, 1.5) * sz, rnd(0.9, 1.8), col[0] * rnd(0.9, 1.1), col[1] * rnd(0.9, 1.1), col[2] * rnd(0.9, 1.1), -0.02, 2.2); }
 function fireball(p, R) {
   for (let i = 0; i < 26 * R; i++) { const c = Math.random() < 0.5 ? CF.fire : CF.fire2; spawnP(fx, p.x + rnd(-R, R) * 0.5, p.y + rnd(-R, R) * 0.5, p.z + rnd(-R, R) * 0.5, rnd(-1, 1) * 7 * R, rnd(0, 1.4) * 6 * R, rnd(-1, 1) * 7 * R, rnd(0.4, 0.8) * R, 0.1, rnd(0.2, 0.5), c[0] * 3, c[1] * 3, c[2] * 3, 0, 4); }
   for (let i = 0; i < 18 * R; i++) { const k = rnd(0.7, 1.2); spawnP(smoke, p.x + rnd(-R, R), p.y + rnd(0, R), p.z + rnd(-R, R), rnd(-2, 2), rnd(1.5, 4.5), rnd(-2, 2), rnd(0.5, 1) * R, rnd(1.8, 3) * R, rnd(1.6, 3.4), CF.smoke[0] * k, CF.smoke[1] * k, CF.smoke[2] * k, -0.06, 1.2); }
@@ -761,8 +766,14 @@ const MPAL = [0,
   0x8f8a7e, // 12 drone shell dark
   0x2a2c30, // 13 drone dark
   0x9a2a1e, // 14 red
+  0x6a7a92, // 15 flight suit
+  0x434d60, // 16 suit dark
+  0x1c1c1e, // 17 boots / gloves
+  0xdedbd2, // 18 helmet
+  0x16222e, // 19 visor
+  0xc99a7a, // 20 skin
 ];
-const PR = new Float32Array(16), PG = new Float32Array(16), PB = new Float32Array(16);
+const PR = new Float32Array(32), PG = new Float32Array(32), PB = new Float32Array(32);
 { const c = new THREE.Color(); MPAL.forEach((h, i) => { if (!i) return; c.setHex(h); PR[i] = c.r; PG[i] = c.g; PB[i] = c.b; }); }
 const mechMat = voxelize(new THREE.MeshLambertMaterial({ vertexColors: true }), MV, 0.9);
 class VoxModel {
@@ -779,7 +790,7 @@ class VoxModel {
   chip(wp, r, spray = 1) {
     this.mesh.updateMatrixWorld(true);
     const lp = this.mesh.worldToLocal(_cv.copy(wp));
-    const cx = lp.x / MV + this.px, cy = lp.y / MV + this.py, cz = lp.z / MV + this.pz, rv = r / MV;
+    const cx = lp.x / MV + this.px, cy = lp.y / MV + this.py, cz = lp.z / MV + this.pz, rv = r / MV / this.mesh.getWorldScale(_cv3).x;
     let n = 0;
     for (let y = Math.floor(cy - rv); y <= cy + rv; y++) for (let z = Math.floor(cz - rv); z <= cz + rv; z++) for (let x = Math.floor(cx - rv); x <= cx + rv; x++) {
       const m = this.g(x, y, z); if (!m) continue;
@@ -787,14 +798,14 @@ class VoxModel {
       this.data[(y * this.d + z) * this.w + x] = 0; n++;
       if (Math.random() < 0.7 * spray) {
         _cv2.set((x + 0.5 - this.px) * MV, (y + 0.5 - this.py) * MV, (z + 0.5 - this.pz) * MV); this.mesh.localToWorld(_cv2);
-        spawnP(debris, _cv2.x, _cv2.y, _cv2.z, rnd(-4, 4), rnd(2, 7), rnd(-4, 4), MV * rnd(0.7, 1.1), MV * rnd(0.7, 1.1), rnd(3, 6), PR[m], PG[m], PB[m], 1, 0.3);
+        spawnP(debris, _cv2.x, _cv2.y, _cv2.z, rnd(-4, 4), rnd(2, 7), rnd(-4, 4), MV * KS * rnd(0.7, 1.1), MV * KS * rnd(0.7, 1.1), rnd(3, 6), PR[m], PG[m], PB[m], 1, 0.3);
       }
     }
     if (n) this.build();
     return n;
   }
 }
-const _cv = new V3(), _cv2 = new V3();
+const _cv = new V3(), _cv2 = new V3(), _cv3 = new V3();
 const stripe = (a, b) => (Math.floor((a + b) / 0.25) & 1) ? 6 : 7;
 const wear = (x, y, z, base) => { const h = hash3(x * 7 + 3, y * 5 + 1, z * 3 + 2); return h < 0.05 ? 8 : h < 0.08 ? 9 : base; };
 function hullVox(X, Y, Z, x, y, z) {
@@ -908,7 +919,7 @@ const mGlow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffa040).mul
 function box(parent, w, h, d, x, y, z, mat, cast = true) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = cast; m.receiveShadow = true; parent.add(m); return m; }
 const LEGDEF = [{ id: 'FL', name: 'FRONT-LEFT', side: -1, end: -1 }, { id: 'FR', name: 'FRONT-RIGHT', side: 1, end: -1 }, { id: 'BL', name: 'REAR-LEFT', side: -1, end: 1 }, { id: 'BR', name: 'REAR-RIGHT', side: 1, end: 1 }];
 const PAIRS = [[0, 3], [1, 2]];
-const hull = new THREE.Group(); hull.rotation.order = 'YXZ'; scene.add(hull);
+const hull = new THREE.Group(); hull.rotation.order = 'YXZ'; hull.scale.setScalar(KS); scene.add(hull);
 let hullM = TPL.hull.clone(); hull.add(hullM.mesh);
 // visor + headlamps
 const exterior = new THREE.Group(); hull.add(exterior);
@@ -957,7 +968,7 @@ const M = {
   scrap: 0, kills: 0, prevVel: new V3(), acc: new V3(), accS: new V3(), gacc: new V3(), drag: 0, hurtT: 0, nextPair: 0, camBump: 0, camBumpV: 0,
 };
 const legs = LEGDEF.map((d, i) => ({
-  i, ...d, hipLocal: new V3(d.side * 1.9, -0.35, d.end * 1.9), rx: d.side * 4.2, rz: d.end * 3.9,
+  i, ...d, hipLocal: new V3(d.side * 1.9, -0.35, d.end * 1.9), rx: d.side * 4.2 * KS, rz: d.end * 3.9 * KS,
   alive: true, hp: 100, foot: new V3(), from: new V3(), to: new V3(), home: new V3(), homeY: 0,
   hipW: new V3(), kneeW: new V3(), ankleW: new V3(), stepping: false, planted: true, t: 0, dur: 0.3, arc: 0.8,
 }));
@@ -965,7 +976,7 @@ const wrecks = [];
 function makeLegMeshes(L) {
   L.thighM = TPL.thigh.clone(); L.shinM = TPL.shin.clone(); L.kneeM = TPL.joint.clone(); L.footM = TPL.foot.clone();
   L.parts = [L.thighM.mesh, L.shinM.mesh, L.kneeM.mesh, L.footM.mesh];
-  for (const p of L.parts) scene.add(p);
+  for (const p of L.parts) { p.scale.setScalar(KS); scene.add(p); }
   if (!L.hipM) { L.hipM = TPL.joint.clone(); L.hipM.mesh.position.copy(L.hipLocal); hull.add(L.hipM.mesh); }
 }
 legs.forEach(makeLegMeshes);
@@ -1015,11 +1026,11 @@ function damageLeg(L, dmg) {
 function destroyLeg(L) {
   if (!L.alive) return;
   L.alive = false; L.hp = 0; L.stepping = false;
-  L.kneeM.chip(L.kneeW, 0.5); L.thighM.chip(L.kneeW, 0.6); L.shinM.chip(L.kneeW, 0.6);
+  L.kneeM.chip(L.kneeW, 0.3); L.thighM.chip(L.kneeW, 0.33); L.shinM.chip(L.kneeW, 0.33);
   fireball(L.kneeW, 0.9); sfx.boom(L.kneeW, 0.8); sfx.alarm(); shake(0.7);
   for (const p of L.parts) wrecks.push({ obj: p, vel: new V3(rnd(-3, 3) + L.side * 3, rnd(3, 7), rnd(-3, 3) + L.end * 2).add(M.vel), av: new V3(rnd(-4, 4), rnd(-4, 4), rnd(-4, 4)), rest: false });
   L.parts = [];
-  L.hipM.chip(L.hipW, 0.35);
+  L.hipM.chip(L.hipW, 0.2);
   M.kickV += 1.2 * -L.end; M.rkV += 1.2 * -L.side;
   const n = legs.filter(l => l.alive).length;
   toast(`${L.name} leg lost — ${n} left`, 'red');
@@ -1044,7 +1055,7 @@ function canopyHit() {
 function kill(why) {
   if (M.dead) return;
   M.dead = true; M.deadT = 0; drawCracks(3); shake(1); sfx.boom(null, 0.8); sfx.alarm();
-  hullM.chip(_v.set(0, 0.5, -1.6).applyMatrix4(hull.matrixWorld), 0.7); fireball(_v, 1.2);
+  hullM.chip(_v.set(0, 0.5, -1.6).applyMatrix4(hull.matrixWorld), 0.4); fireball(_v, 1.0);
   $('dead').style.opacity = 1;
   $('overWhy').textContent = why;
   $('overStat').textContent = `Scrap recovered: ${M.scrap} · Drones destroyed: ${M.kills}`;
@@ -1055,7 +1066,7 @@ function mechHit(p) {
   const x = _v3.x, y = _v3.y, z = _v3.z;
   if (Math.abs(x) < 1.9 && Math.abs(y) < 0.95 && Math.abs(z) < 2.45) return (z < -1.2 && y > 0.05 && Math.abs(x) < 0.9) ? 'cockpit' : 'hull';
   if (Math.abs(x) < 1.15 && y > 0.8 && y < 1.85 && z > -1.0 && z < 2.0) return 'hull';
-  for (const L of legs) if (L.alive && (distSeg(p, L.hipW, L.kneeW) < 0.55 || distSeg(p, L.kneeW, L.ankleW) < 0.5)) return { leg: L };
+  for (const L of legs) if (L.alive && (distSeg(p, L.hipW, L.kneeW) < 0.55 * KS || distSeg(p, L.kneeW, L.ankleW) < 0.5 * KS)) return { leg: L };
   return null;
 }
 function distSeg(p, a, b) {
@@ -1067,44 +1078,45 @@ function distSeg(p, a, b) {
 function shake(a) { M.trauma = Math.min(1, M.trauma + a); }
 
 // ============================================================ MECH BODY PHYSICS
-const CORN = [[-1.8, -2.0], [1.8, -2.0], [-1.8, 2.0], [1.8, 2.0]];
+const CORN = [[-1.8, -2.0], [1.8, -2.0], [-1.8, 2.0], [1.8, 2.0]].map(([a, b]) => [a * KS, b * KS]);
 const HULL_PTS = [];
 for (const z of [-2.4, -1.2, 0, 1.2, 2.4]) HULL_PTS.push([-1.85, z], [1.85, z]);
 for (const x of [-0.9, 0, 0.9]) HULL_PTS.push([x, -2.4], [x, 2.4]);
+for (const q of HULL_PTS) { q[0] *= KS; q[1] *= KS; }
 const SUP = { y: 0, pitch: 0, roll: 0, contact: [false, false, false, false], g: [0, 0, 0, 0] };
 function computeSupport() {
   const c = Math.cos(M.yaw), s = Math.sin(M.yaw);
   let sum = 0, n = 0; const hs = [0, 0, 0, 0];
-  const minFoot = M.pos.y - RIDE - 1.8;
+  const minFoot = M.pos.y - RIDE - 1.8 * KS;
   for (let i = 0; i < 4; i++) {
     const L = legs[i], [lx, lz] = CORN[i];
     const wx = M.pos.x + lx * c + lz * s, wz = M.pos.z - lx * s + lz * c;
-    SUP.g[i] = heightAt(wx, wz, M.pos.y + 0.4);
+    SUP.g[i] = heightAt(wx, wz, M.pos.y + 0.2);
     if (L.alive) {
       let fy;
       if (!M.grounded) fy = L.homeY;
-      else if (L.stepping) fy = L.to.y - 0.3 * Math.sin(Math.PI * Math.min(1, L.t));   // a lifted leg carries no weight: that corner sags
+      else if (L.stepping) fy = L.to.y - 0.18 * KS * Math.sin(Math.PI * Math.min(1, L.t));   // a lifted leg carries no weight: that corner sags
       else fy = L.foot.y;
       fy = Math.max(fy, minFoot); hs[i] = fy + RIDE; sum += hs[i]; n++;
     }
   }
   const avg = n ? sum / n : 0;
   for (let i = 0; i < 4; i++) {
-    if (!legs[i].alive) hs[i] = n >= 3 ? Math.max(SUP.g[i] + 0.9, avg - 1.15) : SUP.g[i] + 0.9;
-    hs[i] = Math.max(hs[i], SUP.g[i] + 0.9);
-    SUP.contact[i] = !legs[i].alive && hs[i] <= SUP.g[i] + 0.95;
+    if (!legs[i].alive) hs[i] = n >= 3 ? Math.max(SUP.g[i] + HH, avg - 1.15 * KS) : SUP.g[i] + HH;
+    hs[i] = Math.max(hs[i], SUP.g[i] + HH);
+    SUP.contact[i] = !legs[i].alive && hs[i] <= SUP.g[i] + HH + 0.04;
   }
-  const center = heightAt(M.pos.x, M.pos.z, M.pos.y + 0.4) + 0.9;
+  const center = heightAt(M.pos.x, M.pos.z, M.pos.y + 0.2) + HH;
   SUP.y = Math.max((hs[0] + hs[1] + hs[2] + hs[3]) / 4, center);
-  SUP.pitch = Math.atan2((hs[0] + hs[1]) - (hs[2] + hs[3]), 8.0);
-  SUP.roll = Math.atan2((hs[1] + hs[3]) - (hs[0] + hs[2]), 7.2);
+  SUP.pitch = Math.atan2((hs[0] + hs[1]) - (hs[2] + hs[3]), 8.0 * KS);
+  SUP.roll = Math.atan2((hs[1] + hs[3]) - (hs[0] + hs[2]), 7.2 * KS);
   return SUP;
 }
 function hullBlocked(px, pz, py) {
   const c = Math.cos(M.yaw), s = Math.sin(M.yaw); let weak = null;
   for (const [lx, lz] of HULL_PTS) {
     const wx = px + lx * c + lz * s, wz = pz - lx * s + lz * c;
-    for (const hy of [-0.5, 0.05, 0.65]) {
+    for (const hy of [-0.5 * KS, 0.05 * KS, 0.65 * KS]) {
       const vx = Math.floor(wx / VS), vy = Math.floor((py + hy) / VS), vz = Math.floor(wz / VS);
       const m = get(vx, vy, vz);
       if (m) { if (MATS[m].h < 0.7) (weak ||= []).push(vx, vy, vz); else return true; }
@@ -1130,7 +1142,7 @@ function aliveLegs() { return legs.filter(l => l.alive); }
 function updateBody(dt) {
   const alive = aliveLegs(), n = alive.length;
   let fwd = 0, str = 0, trn = 0, sprint = false;
-  if (!M.dead && playing) {
+  if (!M.dead && playing && mode === 'mech') {
     fwd = (K.KeyW ? 1 : 0) - (K.KeyS ? 1 : 0) + T.my; str = (K.KeyE ? 1 : 0) - (K.KeyQ ? 1 : 0);
     trn = (K.KeyA ? 1 : 0) - (K.KeyD ? 1 : 0) - T.mx; sprint = !!(K.ShiftLeft || K.ShiftRight);
   }
@@ -1139,7 +1151,7 @@ function updateBody(dt) {
   let cxs = 0, czs = 0; for (const l of alive) { cxs += l.side; czs += l.end; } if (n) { cxs /= n; czs /= n; }
   const deadSide = -cxs;
   let speedMul = [0, 0.17, 0.38, 0.6, 1][n];
-  if (n === 4 && sprint) speedMul = 1.65;
+  if (n === 4 && sprint) speedMul = 1.5;
   if (czs > 0.4) speedMul *= 0.75;
   if (fwd < 0) speedMul *= 0.6;
   if (M.moving && n > 0 && n < 4) { const a = Math.abs(fwd); str += deadSide * 0.6 * a; trn += -deadSide * 0.45 * a; }
@@ -1159,17 +1171,17 @@ function updateBody(dt) {
   const spd = WALK * speedMul * lurchF;
   const dvx = (fwx * fwd + rx * str * 0.7) * spd, dvz = (fwz * fwd + rz * str * 0.7) * spd;
   if (M.grounded) {
-    if (n > 0) { const k = 1 - Math.exp(-dt * (n <= 2 ? 7 : 1.9)); M.vel.x += (dvx - M.vel.x) * k; M.vel.z += (dvz - M.vel.z) * k; }
+    if (n > 0) { const k = 1 - Math.exp(-dt * (n <= 2 ? 9 : 5)); M.vel.x += (dvx - M.vel.x) * k; M.vel.z += (dvz - M.vel.z) * k; }
     else { const f = Math.exp(-dt * 4); M.vel.x *= f; M.vel.z *= f; }
     const tr = TURN * [0, 0.3, 0.45, 0.7, 1][n] * (n <= 2 ? Math.min(1, lurchF + (M.moving ? 0 : 0.4)) : 1) * (sprint && n === 4 ? 0.7 : 1);
-    M.yawV += (trn * tr - M.yawV) * (1 - Math.exp(-dt * 2.6));
+    M.yawV += (trn * tr - M.yawV) * (1 - Math.exp(-dt * 7));
   } else { const f = Math.exp(-dt * 0.25); M.vel.x *= f; M.vel.z *= f; M.yawV *= Math.exp(-dt * 1.5); }
   M.yaw += M.yawV * dt;
   M.vel.addScaledVector(M.gacc, dt);
   if (M.grounded && M.gacc.y > GRAV * 0.85) { M.grounded = false; M.vel.y = 0.5; }
   const sup = computeSupport();
   if (M.grounded) {
-    if (sup.y < M.pos.y - 0.9) { M.grounded = false; M.vel.y = 0; }
+    if (sup.y < M.pos.y - 0.55) { M.grounded = false; M.vel.y = 0; }
     else { M.pos.y += (sup.y - M.pos.y) * (1 - Math.exp(-dt * 10)); M.vel.y = 0; }
   }
   if (!M.grounded) {
@@ -1190,7 +1202,7 @@ function updateBody(dt) {
   else { const k = 1 - Math.exp(-dt * 0.8); M.pitch -= M.pitch * k; M.roll -= M.roll * k; }
   M.kickV += (-M.kick * 60 - M.kickV * 8) * dt; M.kick += M.kickV * dt;
   M.rkV += (-M.rk * 60 - M.rkV * 8) * dt; M.rk += M.rkV * dt;
-  M.hOffV += (-M.hOff * 80 - M.hOffV * 9) * dt; M.hOff += M.hOffV * dt;
+  M.hOffV += (-M.hOff * 160 - M.hOffV * 15) * dt; M.hOff += M.hOffV * dt;
   hull.position.set(M.pos.x, M.pos.y + M.hOff, M.pos.z); hull.rotation.set(M.pitch + M.kick, M.yaw, M.roll + M.rk);
   hull.updateMatrixWorld(true);
   let drag = 0;
@@ -1203,16 +1215,16 @@ function updateBody(dt) {
   if (drag > 0) shake(0.02 * drag);
 }
 function land(v) {
-  if (v > 3) { shake(Math.min(1, v / 14)); sfx.step(Math.min(1.4, v / 8)); M.hOffV -= v * 0.25; M.camBumpV -= v * 0.25; for (const L of aliveLegs()) dust(L.foot, 5, 0.8); }
-  if (v > 11) {
-    const dmg = (v - 11) * 9; toast('Hard landing', 'red');
+  if (v > 3) { shake(Math.min(1, v / 14)); sfx.step(Math.min(1.4, v / 8)); M.hOffV -= v * 0.1; M.camBumpV -= v * 0.12; for (const L of aliveLegs()) dust(L.foot, 5, 0.8); }
+  if (v > 12.5) {
+    const dmg = (v - 12.5) * 9; toast('Hard landing', 'red');
     for (const L of aliveLegs()) damageLeg(L, dmg * rnd(0.7, 1.3));
     if (!aliveLegs().length) hullDamage(dmg * 0.4, 'The frame hit the ground too hard.');
   }
 }
 function startLurchStep(alive, n) {
   const L = alive[M.lurchIdx++ % n];
-  _v.copy(L.home).addScaledVector(M.moveDir, n === 2 ? 1.7 : 2.1);
+  _v.copy(L.home).addScaledVector(M.moveDir, (n === 2 ? 1.7 : 2.1) * KS);
   _v.y = heightAt(_v.x, _v.z, M.pos.y - 0.5);
   beginStep(L, _v, n === 2 ? 0.5 : 0.75, 1.3);
 }
@@ -1234,7 +1246,7 @@ function updateLegs(dt) {
   const alive = aliveLegs(), n = alive.length;
   const c = Math.cos(M.yaw), s = Math.sin(M.yaw);
   const hs = Math.hypot(M.vel.x, M.vel.z);
-  const dur = n === 4 ? clamp(0.5 - hs * 0.04, 0.27, 0.5) : 0.44;
+  const dur = n === 4 ? clamp(0.3 - hs * 0.016, 0.13, 0.3) : 0.26;
   const lead = n >= 3 ? dur * 1.05 : 0;
   for (const L of alive) {
     L.hipW.copy(L.hipLocal).applyMatrix4(hull.matrixWorld);
@@ -1245,10 +1257,10 @@ function updateLegs(dt) {
     for (const L of alive) { L.planted = false; L.stepping = false; _v.set(L.side * 3.3, -3.1, L.end * 2.9).applyMatrix4(hull.matrixWorld); L.foot.lerp(_v, 1 - Math.exp(-dt * 6)); }
   } else {
     for (const L of alive) {
-      if (!L.planted && !L.stepping) { beginStep(L, L.home, 0.22, 0.3); continue; }
+      if (!L.planted && !L.stepping) { beginStep(L, L.home, 0.15, 0.2); continue; }
       if (L.planted) {
         const gy = heightAt(L.foot.x, L.foot.z, L.foot.y + 0.2);
-        if (gy < L.foot.y - 0.3 || L.hipW.distanceTo(L.foot) > THIGH + SHIN - 0.1) beginStep(L, L.home, 0.28, 0.5);
+        if (gy < L.foot.y - 0.3 || L.hipW.distanceTo(L.foot) > THIGH + SHIN - 0.1) beginStep(L, L.home, 0.18, 0.3);
       }
     }
     const active = M.moving || Math.abs(M.yawV) > 0.04 || hs > 0.3;
@@ -1259,15 +1271,15 @@ function updateLegs(dt) {
       if (!busy) {
         const e = Math.max(legErr(legs[pair[0]]), legErr(legs[pair[1]]));
         const e2 = Math.max(legErr(legs[other[0]]), legErr(legs[other[1]]));
-        const thr = active ? 0.22 : 0.35;
-        if (e > thr) { for (const i of pair) beginStep(legs[i], legs[i].home, dur, 0.5 + hs * 0.07); M.nextPair = 1 - M.nextPair; }
+        const thr = active ? 0.1 : 0.2;
+        if (e > thr) { for (const i of pair) beginStep(legs[i], legs[i].home, dur, 0.26 + hs * 0.025); M.nextPair = 1 - M.nextPair; }
         else if (e2 > thr) M.nextPair = 1 - M.nextPair;
       }
     } else if (n === 3 || (n <= 2 && !M.moving)) {
       if (!alive.some(L => L.stepping)) {
-        let best = null, be = active ? 0.22 : 0.35;
+        let best = null, be = active ? 0.1 : 0.2;
         for (const L of alive) { const e = legErr(L); if (e > be) { be = e; best = L; } }
-        if (best) beginStep(best, best.home, n === 3 ? 0.42 : 0.5, 0.9);
+        if (best) beginStep(best, best.home, n === 3 ? 0.24 : 0.3, 0.45);
       }
     }
     for (const L of alive) if (L.stepping) {
@@ -1296,13 +1308,13 @@ function updateLegs(dt) {
 }
 function onPlant(L, n) {
   const v = n === 4 ? 0.8 : 1;
-  sfx.step(v * (playing ? 1 : 0.3)); dust(L.foot, n === 4 ? 3 : 5, 0.6);
+  sfx.step(v * (playing ? 1 : 0.3)); dust(L.foot, n === 4 ? 2 : 4, 0.35, CF.dust, 0.45);
   shake(n === 4 ? 0.05 : 0.1);
-  M.hOffV -= 0.45; M.camBumpV -= 0.6;
+  M.hOffV -= 0.16; M.camBumpV -= 0.22;
   M.kickV += L.end * 0.1; M.rkV -= L.side * 0.07;
   const fx_ = Math.floor(L.foot.x / VS), fy = Math.floor((L.foot.y - 0.1) / VS), fz = Math.floor(L.foot.z / VS);
-  crushAround(fx_, fy, fz, 2);
-  for (const e of enemies) if (e.alive && e.type === 'hound' && e.pos.distanceTo(L.foot) < 1.8) { killEnemy(e, 'stomp'); toast('Stomped', 'teal'); }
+  crushAround(fx_, fy, fz, 1);
+  for (const e of enemies) if (e.alive && e.type === 'hound' && e.pos.distanceTo(L.foot) < 1.3) { killEnemy(e, 'stomp'); toast('Stomped', 'teal'); }
 }
 
 // ============================================================ TURRET / AIM / FIRE
@@ -1318,16 +1330,16 @@ function updateAim(dt) {
     if (_v2.lengthSq() - t * t < e.r * e.r) best = t;
   }
   // ignore hits on the area right around our own frame (chase camera looks over it)
-  const minT = view === 'cockpit' ? 4 : 8;
+  const minT = view === 'cockpit' ? 3 : 5;
   if (best < minT) { const h2 = raycast(o.x + camDir.x * minT, o.y + camDir.y * minT, o.z + camDir.z * minT, camDir.x, camDir.y, camDir.z, 300); best = h2 ? minT + h2.t : 300; }
   aimPt.copy(o).addScaledVector(camDir, best);
   _v.copy(aimPt); hull.worldToLocal(_v); _v.sub(turret.position);
   const dYaw = clamp(Math.atan2(-_v.x, -_v.z), -2.6, 2.6);
-  const ry = 1.1 * dt; M.tYaw += clamp(dYaw - M.tYaw, -ry, ry); turret.rotation.y = M.tYaw;
+  const ry = 2.6 * dt; M.tYaw += clamp(dYaw - M.tYaw, -ry, ry); turret.rotation.y = M.tYaw;
   turret.updateMatrixWorld(true);
   _v.copy(aimPt); turret.worldToLocal(_v); _v.sub(barrelPivot.position);
   const dPitch = clamp(Math.atan2(_v.y, Math.hypot(_v.x, _v.z)), -0.38, 0.62);
-  const rp = 0.9 * dt; M.tPitch += clamp(dPitch - M.tPitch, -rp, rp); barrelPivot.rotation.x = M.tPitch;
+  const rp = 2.0 * dt; M.tPitch += clamp(dPitch - M.tPitch, -rp, rp); barrelPivot.rotation.x = M.tPitch;
   M.recoil = Math.max(0, M.recoil - dt * 2.0); recoilG.position.z = Math.sin(Math.min(1, M.recoil) * Math.PI * 0.5) * 0.85;
   barrelPivot.updateMatrixWorld(true);
   muzzle.getWorldPosition(muzzleW); barrelDir.set(0, 0, -1).transformDirection(recoilG.matrixWorld);
@@ -1343,8 +1355,8 @@ function fire() {
   const mesh = new THREE.Mesh(shellGeo, shellMat); scene.add(mesh);
   shells.push({ pos: muzzleW.clone(), vel: barrelDir.clone().multiplyScalar(190).add(M.vel), life: 2.5, mesh, owner: 'p' });
   const hx = barrelDir.x, hz = barrelDir.z, hl = Math.hypot(hx, hz) || 1;
-  M.vel.x -= hx / hl * 2.4; M.vel.z -= hz / hl * 2.4;
-  M.kickV += 2.2 * Math.cos(M.tYaw); M.rkV += 1.5 * Math.sin(M.tYaw); M.hOffV -= 0.6;
+  M.vel.x -= hx / hl * 1.6; M.vel.z -= hz / hl * 1.6;
+  M.kickV += 1.5 * Math.cos(M.tYaw); M.rkV += 1.0 * Math.sin(M.tYaw); M.hOffV -= 0.25;
   shake(0.6);
   muzzleLight.position.copy(muzzleW); muzzleLight.intensity = 1200;
   for (let i = 0; i < 18; i++) { const c = Math.random() < 0.5 ? CF.fire : CF.fire2; spawnP(fx, muzzleW.x, muzzleW.y, muzzleW.z, barrelDir.x * rnd(4, 18) + rnd(-3, 3), barrelDir.y * rnd(4, 18) + rnd(-3, 3), barrelDir.z * rnd(4, 18) + rnd(-3, 3), rnd(0.3, 0.7), 0.05, rnd(0.08, 0.2), c[0] * 4, c[1] * 4, c[2] * 4, 0, 6); }
@@ -1370,16 +1382,17 @@ function updateShells(dt) {
         e.center(_v); _v2.subVectors(_v, S.pos); const t = _v2.dot(_dir); if (t < 0 || t > hitT) continue;
         if (_v2.lengthSq() - t * t < e.r * e.r) { hitT = t; done = 'enemy'; e.hp -= 60; }
       }
-      if (done || h) { _v.copy(S.pos).addScaledVector(_dir, Math.max(0, hitT - 0.1)); explode(_v, 2.0, { mechDmg: 70, debris: 260, owner: 'p' }); done = true; }
+      if (done || h) { _v.copy(S.pos).addScaledVector(_dir, Math.max(0, hitT - 0.1)); explode(_v, 1.7, { mechDmg: 70, debris: 220, owner: 'p' }); done = true; }
     } else {
       for (let t = 0; t <= hitT; t += 0.3) {
         _v.copy(S.pos).addScaledVector(_dir, t);
+        if (mode === 'foot' && pilotHit(_v, 0.35)) { sparks(_v, 12, 6, CF.red); kill('Shot on foot. The frame can be rebuilt. The pilot cannot.'); done = true; break; }
         const part = mechHit(_v);
         if (part) {
           sparks(_v, 14, 7, CF.red); sparks(_v, 10, 6); done = true; M.hurtT = 0.35;
-          if (part === 'cockpit') { chipHull(_v, 0.3); canopyHit(); }
-          else if (part === 'hull') { chipHull(_v, 0.32); hullDamage(9); sfx.clang(); shake(0.25); }
-          else { chipLeg(part.leg, _v, 0.28); damageLeg(part.leg, 26); sfx.clang(); shake(0.2); }
+          if (part === 'cockpit') { chipHull(_v, 0.18); canopyHit(); }
+          else if (part === 'hull') { chipHull(_v, 0.18); hullDamage(9); sfx.clang(); shake(0.25); }
+          else { chipLeg(part.leg, _v, 0.15); damageLeg(part.leg, 26); sfx.clang(); shake(0.2); }
           break;
         }
       }
@@ -1418,11 +1431,12 @@ function explode(p0, R, o = {}) {
   if (!o.quiet) sfx.boom(p, Math.min(1, R / 1.9)); else sfx.crunch(p);
   shake(clamp(1.3 - camera.position.distanceTo(p) / 40, 0, 1) * Math.min(1, R / 1.7));
   for (const e of enemies) if (e.alive) { e.center(_v); const d = _v.distanceTo(p); if (d < R + 1.6) e.hp -= 150 * (1 - d / (R + 1.6)); }
+  if (mode === 'foot' && !M.dead && pilotHit(p, R + 0.6)) kill('Caught in a blast on foot.');
   if (o.mechDmg && !M.dead) {
     const Rm = R * 2.2;
-    for (const L of aliveLegs()) { const d = Math.min(distSeg(p, L.hipW, L.kneeW), distSeg(p, L.kneeW, L.ankleW)); if (d < Rm) { if (d < R * 1.2) chipLeg(L, p, 0.35); damageLeg(L, o.mechDmg * (1 - d / Rm)); } }
-    const dh = p.distanceTo(M.pos) - 2.0;
-    if (dh < Rm * 0.7) { if (dh < R) chipHull(p.clone().lerp(M.pos, 0.3), 0.45); hullDamage(o.mechDmg * 0.35 * (1 - Math.max(0, dh) / (Rm * 0.7)), 'Blast damage tore through the empty armour.'); }
+    for (const L of aliveLegs()) { const d = Math.min(distSeg(p, L.hipW, L.kneeW), distSeg(p, L.kneeW, L.ankleW)); if (d < Rm) { if (d < R * 1.2) chipLeg(L, p, 0.2); damageLeg(L, o.mechDmg * (1 - d / Rm)); } }
+    const dh = p.distanceTo(M.pos) - 1.1;
+    if (dh < Rm * 0.7) { if (dh < R) chipHull(p.clone().lerp(M.pos, 0.3), 0.26); hullDamage(o.mechDmg * 0.35 * (1 - Math.max(0, dh) / (Rm * 0.7)), 'Blast damage tore through the empty armour.'); }
   }
 }
 const dfsStack = new Int32Array(1 << 21);
@@ -1516,6 +1530,7 @@ function updateFalling(dt) {
       }
     }
     for (const e of enemies) if (e.alive && b.vel.y < -4 && e.pos.distanceTo(b.pos) < b.rad + 1) killEnemy(e, 'crushed');
+    if (mode === 'foot' && !M.dead && b.vel.y < -4 && pilotCenter(_v3).distanceTo(b.pos) < b.rad + 0.3) kill('Crushed by falling rubble on foot.');
     if (hit || b.pos.y < -5) shatter(b);
   }
 }
@@ -1606,7 +1621,8 @@ function updateEnemies(dt) {
     const gy = heightAt(e.pos.x, e.pos.z, e.pos.y + (e.type === 'hound' ? 0.6 : 0.3));
     if (gy < e.pos.y - 0.05) { e.vy -= GRAV * dt; e.pos.y = Math.max(gy, e.pos.y + e.vy * dt); if (e.pos.y <= gy && e.vy < -11) { killEnemy(e, 'fall'); continue; } }
     else { if (e.vy < -11) { killEnemy(e, 'fall'); continue; } e.vy = 0; if (e.type === 'hound') e.pos.y += (gy - e.pos.y) * Math.min(1, dt * 12); else e.pos.y = gy; }
-    const dx = M.pos.x - e.pos.x, dz = M.pos.z - e.pos.z, dist = Math.hypot(dx, dz);
+    const tgt = mode === 'foot' ? pilot.pos : M.pos;
+    const dx = tgt.x - e.pos.x, dz = tgt.z - e.pos.z, dist = Math.hypot(dx, dz);
     const active = hostile && !M.dead && playing;
     if (e.type === 'sentry') {
       const want = Math.atan2(-dx, -dz); let dy = want - e.head.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
@@ -1618,9 +1634,10 @@ function updateEnemies(dt) {
         e.cd = rnd(4.5, 8);
         e.center(_ep); _ep.y += 0.45;
         const al = aliveLegs();
-        if (al.length && Math.random() < 0.62) { const L = al[(Math.random() * al.length) | 0]; _tp.lerpVectors(L.kneeW, L.ankleW, Math.random() * 0.8); }
+        if (mode === 'foot') pilotCenter(_tp).y += rnd(-0.3, 0.4);
+        else if (al.length && Math.random() < 0.62) { const L = al[(Math.random() * al.length) | 0]; _tp.lerpVectors(L.kneeW, L.ankleW, Math.random() * 0.8); }
         else _tp.set(0, -0.15, 0.5).applyMatrix4(hull.matrixWorld);
-        _tp.x += rnd(-1.1, 1.1); _tp.y += rnd(-0.8, 0.8); _tp.z += rnd(-1.1, 1.1);
+        const sp_ = mode === 'foot' ? 0.9 : 0.7; _tp.x += rnd(-sp_, sp_); _tp.y += rnd(-0.5, 0.5); _tp.z += rnd(-sp_, sp_);
         _v.subVectors(_tp, _ep); const L_ = _v.length(); _v.divideScalar(L_);
         const h = raycast(_ep.x + _v.x * 1.2, _ep.y + _v.y * 1.2, _ep.z + _v.z * 1.2, _v.x, _v.y, _v.z, L_ - 3);
         if (!h) fireBolt(_ep.clone().addScaledVector(_v, 1.0), _tp);
@@ -1639,8 +1656,8 @@ function updateEnemies(dt) {
       e.legsH.forEach((p, k) => p.rotation.x = Math.sin(e.t * 16 + (k % 2 ? Math.PI : 0) + (k > 1 ? Math.PI / 2 : 0)) * 0.7);
       e.body.position.y = 0.55 + Math.abs(Math.sin(e.t * 16)) * 0.08;
       e.center(_ep);
-      let close = _ep.distanceTo(M.pos) < 3.6;
-      for (const L of aliveLegs()) if (distSeg(_ep, L.kneeW, L.ankleW) < 2.4 || _ep.distanceTo(L.foot) < 2.4) close = true;
+      let close = _ep.distanceTo(M.pos) < 2.2 || (mode === 'foot' && _ep.distanceTo(pilotCenter(_v3)) < 1.8);
+      for (const L of aliveLegs()) if (distSeg(_ep, L.kneeW, L.ankleW) < 1.6 || _ep.distanceTo(L.foot) < 1.6) close = true;
       if (close || e.stuck > 3.5) { killEnemy(e, 'detonate'); M.kills--; }
     }
   }
@@ -1649,6 +1666,134 @@ function updateEnemies(dt) {
     if (houndTimer <= 0) { houndTimer = rnd(20, 28); const k = 2 + ((Math.random() * 2) | 0); for (let i = 0; i < k; i++) spawnHound(); toast(`${k} hounds inbound`, ''); }
     if (enemies.filter(e => e.type === 'sentry').length < 2) { sentryTimer += dt; if (sentryTimer > 10) { sentryTimer = 0; spawnSentries(4); toast('New sentries on the rooftops'); } }
   }
+}
+
+// ============================================================ PILOT (on foot)
+// Built at real human scale; the Bulwark is sized around this figure.
+const HS = 0.5; // pilot voxels are 6.25 cm
+function pBodyVox(X, Y, Z) {
+  const ax = Math.abs(X), az = Math.abs(Z);
+  if (Y < 0.12) return (ax < 0.17 && az < 0.11 && Y > -0.06) ? 16 : 0;
+  if (Y < 0.55) {
+    const w = 0.2 - (0.55 - Y) * 0.08; if (!(ax < w && az < 0.12)) return 0;
+    if (Math.abs(ax - 0.08) < 0.026 && Z < 0) return 6;          // harness straps
+    if (Y > 0.28 && Y < 0.34) return 16;
+    if (Z > 0.07 && Y > 0.2) return 16;                              // backpack
+    return 15;
+  }
+  if (Y < 0.61) return (ax < 0.06 && az < 0.06) ? 20 : 0;
+  if (Y < 0.88) {
+    if (!(ax < 0.125 && az < 0.135)) return 0;
+    if (ax + az > 0.21 && Y > 0.8) return 0;
+    if (Z < -0.07 && Y > 0.66 && Y < 0.78 && ax < 0.1) return 19;    // visor
+    if (Math.abs(X) < 0.02 && Y > 0.8) return 6;
+    return 18;
+  }
+  return 0;
+}
+function pLegVox(X, Y, Z) {
+  const ax = Math.abs(X), az = Math.abs(Z);
+  if (Y > -0.46) return (ax < 0.085 && az < 0.085) ? 15 : 0;
+  if (Y > -0.84) { if (Y > -0.54 && Y < -0.44 && Z < -0.03 && ax < 0.08) return 16; return (ax < 0.07 && az < 0.075) ? 15 : 0; }
+  return (ax < 0.075 && Z > -0.17 && Z < 0.08) ? 17 : 0;
+}
+function pArmVox(X, Y, Z) { const ax = Math.abs(X), az = Math.abs(Z); if (Y > -0.6) return (ax < 0.065 && az < 0.065) ? (Y > -0.1 ? 16 : 15) : 0; return (ax < 0.058 && az < 0.058) ? 17 : 0; }
+const hm = (w, h, d, px, py, pz, fn) => { const m = VoxModel.make(w, h, d, px, py, pz, (X, Y, Z) => fn(X * HS, Y * HS, Z * HS)); m.mesh.scale.setScalar(HS); return m; };
+const pilot = { root: new THREE.Group(), hip: new THREE.Group(), pos: new V3(), vel: new V3(), yaw: 0, ground: true, walkT: 0, camYaw: 0, camPitch: -0.15, t: 0, from: new V3() };
+let mode = 'foot';           // 'foot' | 'boarding' | 'mech'
+{
+  const P = pilot; P.root.add(P.hip); P.hip.position.y = 0.94; scene.add(P.root);
+  P.hip.add(hm(8, 15, 6, 4, 1, 3, pBodyVox).mesh);
+  P.legs = [-1, 1].map(s => { const g = new THREE.Group(); g.position.set(s * 0.09, 0, 0); g.add(hm(4, 15, 6, 2, 15, 3, pLegVox).mesh); P.hip.add(g); return g; });
+  P.arms = [-1, 1].map(s => { const g = new THREE.Group(); g.position.set(s * 0.26, 0.5, 0); g.add(hm(4, 12, 4, 2, 12, 2, pArmVox).mesh); P.hip.add(g); return g; });
+}
+// hatch on the hull roof: the pilot climbs in here
+const hatchPivot = new THREE.Group(); hatchPivot.position.set(0, 0.83, -0.25); hull.add(hatchPivot);
+{ const hm2 = new THREE.MeshLambertMaterial({ color: 0x737a52 }); const h = box(hatchPivot, 1.05, 0.09, 1.0, 0, 0.02, -0.5, hm2); box(hatchPivot, 0.3, 0.05, 0.1, 0, 0.08, -0.85, new THREE.MeshLambertMaterial({ color: 0xd47a22 })); }
+let hatchOpen = 0, hatchTarget = 0;
+function placePilotBeside() {
+  const c = Math.cos(M.yaw), s = Math.sin(M.yaw);
+  for (const d of [2.4, 3.2, 4.0]) for (const side of [-1, 1]) {
+    const x = M.pos.x + side * c * d, z = M.pos.z - side * s * d, y = heightAt(x, z, M.pos.y);
+    if (!blockedP(x, y, z)) { pilot.pos.set(x, y, z); return; }
+  }
+  pilot.pos.set(M.pos.x, heightAt(M.pos.x, M.pos.z, M.pos.y + 2), M.pos.z);
+}
+function blockedP(x, y, z) {
+  const r = 0.26;
+  for (const [dx, dz] of [[r, 0], [-r, 0], [0, r], [0, -r], [0.7 * r, 0.7 * r], [-0.7 * r, 0.7 * r], [0.7 * r, -0.7 * r], [-0.7 * r, -0.7 * r]])
+    for (const h of [0.3, 0.9, 1.6]) if (solidW(x + dx, y + h, z + dz)) return true;
+  return false;
+}
+function tryBoard() {
+  if (mode !== 'foot' || M.dead) return;
+  if (Math.hypot(pilot.pos.x - M.pos.x, pilot.pos.z - M.pos.z) > 3.2) { toast('Get closer to the Bulwark to climb in'); return; }
+  mode = 'boarding'; pilot.t = 0; pilot.from.copy(pilot.pos); hatchTarget = 1; sfx.servo(); sfx.anchor();
+}
+function tryExit() {
+  if (mode !== 'mech' || M.dead) return;
+  if (!M.grounded) { toast('Land first'); return; }
+  hatchTarget = 1; mode = 'foot'; placePilotBeside(); pilot.vel.set(0, 0, 0);
+  pilot.camYaw = M.yaw + M.lookYaw; pilot.camPitch = -0.15; pilot.root.visible = true; camSnap = true; view = 'chase';
+  for (const G of grapples) G.state = 'idle';
+  setTimeout(() => { if (mode === 'foot') hatchTarget = 0; }, 900);
+  sfx.anchor(); toast('On foot. One hit and you are done.', 'red');
+}
+function jump() {
+  if (mode === 'foot' && pilot.ground) { pilot.vel.y = 5.2; pilot.ground = false; return; }
+  if (mode === 'mech' && M.grounded && aliveLegs().length >= 3 && !M.dead) {
+    M.vel.y = 6.8; M.grounded = false; M.hOffV -= 0.6; shake(0.15); sfx.lurch();
+    for (const L of aliveLegs()) dust(L.foot, 3, 0.4);
+  }
+}
+const pilotCenter = o => o.set(pilot.pos.x, pilot.pos.y + 1.0, pilot.pos.z);
+function pilotHit(p, r) { _v3.set(pilot.pos.x, pilot.pos.y + 0.2, pilot.pos.z); _cv2.set(pilot.pos.x, pilot.pos.y + 1.65, pilot.pos.z); return distSeg(p, _v3, _cv2) < r; }
+function updatePilot(dt) {
+  const P = pilot;
+  hatchOpen += clamp(hatchTarget - hatchOpen, -dt * 3, dt * 3); hatchPivot.rotation.x = hatchOpen * 1.9;
+  if (mode === 'mech') { P.root.visible = false; return; }
+  P.root.visible = true;
+  if (mode === 'boarding') {
+    P.t += dt / 0.75;
+    _v.set(0, 1.1, -0.7).applyMatrix4(hull.matrixWorld);
+    const e = Math.min(1, P.t), arc = Math.sin(Math.PI * e) * 0.9;
+    P.pos.lerpVectors(P.from, _v, e * e * (3 - 2 * e)); P.pos.y += arc - (e > 0.7 ? (e - 0.7) * 3 : 0);
+    P.yaw = M.yaw; P.legs.forEach((g, i) => g.rotation.x = -0.9 * e); P.arms.forEach(g => g.rotation.x = Math.PI * 0.8 * e);
+    P.root.position.copy(P.pos); P.root.rotation.y = P.yaw;
+    if (P.t >= 1) {
+      mode = 'mech'; P.root.visible = false; hatchTarget = 0; camSnap = true;
+      M.lookYaw = Math.atan2(Math.sin(P.camYaw - M.yaw), Math.cos(P.camYaw - M.yaw)); M.lookPitch = -0.17;
+      sfx.anchor(); toast('Hatch sealed. Bulwark is yours.', 'teal');
+    }
+    return;
+  }
+  // on foot: camera-relative movement
+  let f = 0, s = 0, sprint = false;
+  if (!M.dead && playing) { f = (K.KeyW ? 1 : 0) - (K.KeyS ? 1 : 0) + T.my; s = (K.KeyD ? 1 : 0) - (K.KeyA ? 1 : 0) + T.mx; sprint = !!(K.ShiftLeft || K.ShiftRight); }
+  const cy = Math.cos(P.camYaw), sy = Math.sin(P.camYaw);
+  let wx = -sy * f + cy * s, wz = -cy * f - sy * s; const wl = Math.hypot(wx, wz);
+  if (wl > 1) { wx /= wl; wz /= wl; }
+  const spd = sprint ? 6.8 : 4.2, k = 1 - Math.exp(-dt * (P.ground ? 14 : 2));
+  P.vel.x += (wx * spd - P.vel.x) * k; P.vel.z += (wz * spd - P.vel.z) * k;
+  if (wl > 0.1) { const want = Math.atan2(-wx, -wz); let d = want - P.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); P.yaw += d * (1 - Math.exp(-dt * 14)); }
+  P.vel.y -= GRAV * dt;
+  for (const ax of ['x', 'z']) {
+    const n = P.pos.clone(); n[ax] += P.vel[ax] * dt;
+    if (!blockedP(n.x, P.pos.y, n.z)) P.pos[ax] = n[ax];
+    else if (P.ground && !blockedP(n.x, P.pos.y + 0.55, n.z)) { P.pos[ax] = n[ax]; P.pos.y = heightAt(n.x, n.z, P.pos.y + 0.6); }
+    else P.vel[ax] = 0;
+  }
+  P.pos.y += P.vel.y * dt;
+  if (P.vel.y > 0 && solidW(P.pos.x, P.pos.y + 1.8, P.pos.z)) P.vel.y = 0;
+  const g = heightAt(P.pos.x, P.pos.z, P.pos.y + 0.6);
+  if (P.pos.y <= g) { if (P.vel.y < -14) kill('The pilot fell too far.'); P.pos.y = g; P.vel.y = 0; P.ground = true; } else P.ground = P.pos.y - g < 0.05;
+  P.pos.x = clamp(P.pos.x, 6, WORLD - 6); P.pos.z = clamp(P.pos.z, 6, WORLD - 6);
+  const hs = Math.hypot(P.vel.x, P.vel.z);
+  P.walkT += hs * dt * 2.3; const sw = Math.sin(P.walkT) * Math.min(1, hs / 3) * 0.75;
+  P.legs[0].rotation.x = sw; P.legs[1].rotation.x = -sw; P.arms[0].rotation.x = -sw * 0.8; P.arms[1].rotation.x = sw * 0.8;
+  if (!P.ground) { P.legs[0].rotation.x = 0.5; P.legs[1].rotation.x = -0.3; }
+  P.hip.position.y = 0.94 + Math.abs(Math.sin(P.walkT)) * Math.min(1, hs / 3) * 0.05;
+  P.root.position.copy(P.pos); P.root.rotation.y = P.yaw;
 }
 
 // ============================================================ SCRAP
@@ -1663,8 +1808,8 @@ function spawnScrap(p) {
 function updateScrap(dt) {
   for (let i = scraps.length - 1; i >= 0; i--) {
     const s = scraps[i], p = s.g.position; s.t += dt;
-    const d = p.distanceTo(M.pos);
-    if (d < 11 && !M.dead) { _v.subVectors(M.pos, p).normalize(); s.vel.lerp(_v.multiplyScalar(14), Math.min(1, dt * 3)); }
+    const who = mode === 'foot' ? pilotCenter(_v3) : M.pos; const d = p.distanceTo(who);
+    if (d < 11 && !M.dead) { _v.subVectors(who, p).normalize(); s.vel.lerp(_v.multiplyScalar(14), Math.min(1, dt * 3)); }
     else s.vel.y -= GRAV * dt;
     p.addScaledVector(s.vel, dt);
     const gy = heightAt(p.x, p.z, p.y + 0.5) + 0.5 + Math.sin(s.t * 3) * 0.12;
@@ -1761,13 +1906,13 @@ function updateCamera(dt) {
   M.camBumpV += (-M.camBump * 70 - M.camBumpV * 8) * dt; M.camBump += M.camBumpV * dt;
   const sh = M.trauma * M.trauma, t = performance.now() * 0.001;
   const n1 = (Math.sin(t * 61.3) + Math.sin(t * 37.1 + 1.3)) * 0.5, n2 = (Math.sin(t * 53.7 + 2.1) + Math.sin(t * 29.3)) * 0.5, n3 = Math.sin(t * 45.1 + 0.7);
-  cockpit.visible = playing && view === 'cockpit'; exterior.visible = !cockpit.visible; hullM.mesh.visible = !cockpit.visible; // the stepped glacis faces the eye from inside
+  cockpit.visible = playing && view === 'cockpit' && mode === 'mech'; exterior.visible = !cockpit.visible; hullM.mesh.visible = !cockpit.visible; // the stepped glacis faces the eye from inside
   if (!playing) {
     orbitT += dt * 0.07;
     _v.set(Math.sin(orbitT) * 13, 4.2, Math.cos(orbitT) * 13).add(M.pos); camera.position.copy(_v);
     camera.lookAt(M.pos.x, M.pos.y + 0.4, M.pos.z); camSnap = true; return;
   }
-  if (view === 'cockpit') {
+  if (view === 'cockpit' && mode === 'mech') {
     camera.position.copy(EYE).applyMatrix4(hull.matrixWorld);
     _ce.set(M.lookPitch + n1 * sh * 0.06, M.lookYaw + n2 * sh * 0.06, n3 * sh * 0.04);
     _cq.setFromEuler(_ce); camera.quaternion.copy(hull.quaternion).multiply(_cq);
@@ -1775,13 +1920,14 @@ function updateCamera(dt) {
     return;
   }
   // over-the-shoulder chase cam: orientation follows the mouse at once, position trails the frame
-  const yaw = M.yaw + M.lookYaw, pitch = M.lookPitch;
+  const onFoot = mode !== 'mech';
+  const yaw = onFoot ? pilot.camYaw : M.yaw + M.lookYaw, pitch = onFoot ? pilot.camPitch : M.lookPitch;
   _ce.set(pitch, yaw, 0); camera.quaternion.setFromEuler(_ce);
-  _piv.set(M.pos.x, M.pos.y + M.hOff * 0.5 + 1.8, M.pos.z);
-  _off.set(2.0, 1.3, 14.5).applyQuaternion(camera.quaternion);
+  if (onFoot) { _piv.set(pilot.pos.x, pilot.pos.y + 1.55, pilot.pos.z); _off.set(0.55, 0.3, 3.3).applyQuaternion(camera.quaternion); }
+  else { _piv.set(M.pos.x, M.pos.y + M.hOff * 0.5 + 1.25, M.pos.z); _off.set(1.0, 0.95, 8.0).applyQuaternion(camera.quaternion); }
   const dist = _off.length(); _off.divideScalar(dist);
   const h = raycast(_piv.x, _piv.y, _piv.z, _off.x, _off.y, _off.z, dist);
-  const d = h ? Math.max(2.5, h.t - 0.4) : dist;
+  const d = h ? Math.max(onFoot ? 0.6 : 2.5, h.t - 0.3) : dist;
   _v.copy(_piv).addScaledVector(_off, d);
   if (camSnap) { camPos.copy(_v); camSnap = false; } else camPos.lerp(_v, 1 - Math.exp(-dt * 9));
   camera.position.copy(camPos); camera.position.y += M.camBump * 0.6;
@@ -1862,7 +2008,7 @@ function updateHUD(dt) {
   }
   _v.copy(gunPt).project(camera);
   const gr = $('gr').style;
-  if (_v.z < 1 && Math.abs(_v.x) < 1.2 && Math.abs(_v.y) < 1.2) { gr.left = ((_v.x + 1) / 2 * innerWidth) + 'px'; gr.top = ((1 - _v.y) / 2 * innerHeight) + 'px'; } else gr.left = '-100px';
+  if (mode === 'mech' && _v.z < 1 && Math.abs(_v.x) < 1.2 && Math.abs(_v.y) < 1.2) { gr.left = ((_v.x + 1) / 2 * innerWidth) + 'px'; gr.top = ((1 - _v.y) / 2 * innerHeight) + 'px'; } else gr.left = '-100px';
   $('gr').classList.toggle('on', gunOnTarget && M.reload <= 0);
   $('rl').firstChild.style.width = (100 * (1 - Math.max(0, M.reload) / RELOAD)) + '%';
   const hurt = M.hurtT > 0 ? Math.min(1, M.hurtT * 2) : 0; M.hurtT -= dt;
@@ -1870,7 +2016,11 @@ function updateHUD(dt) {
   $('dmg').style.boxShadow = `inset 0 0 160px 40px rgba(255,40,20,${(hurt * 0.55 + (anyLost ? 0.08 + 0.06 * Math.sin(performance.now() * 0.006) : 0)).toFixed(3)})`;
   lampMat.color.setHex(anyLost && Math.sin(performance.now() * 0.012) > 0 ? 0xff2a18 : 0x401010);
   $('cracks').style.display = view === 'cockpit' ? 'block' : 'none';
-  $('hint').textContent = !playing ? '' : isTouch ? '' : (document.pointerLockElement === canvas ? '' : 'Click to steer with the mouse · Esc releases it');
+  const near = mode === 'foot' && Math.hypot(pilot.pos.x - M.pos.x, pilot.pos.z - M.pos.z) < 3.2;
+  $('hint').textContent = !playing || M.dead ? '' : (!isTouch && document.pointerLockElement !== canvas) ? 'Click to steer with the mouse · Esc releases it'
+    : mode === 'foot' ? (near ? (isTouch ? 'Tap BOARD to climb in' : 'F · climb into the Bulwark') : 'Get to your Bulwark') : mode === 'mech' ? (isTouch ? '' : 'Space jump · G climb out') : '';
+  if (isTouch) $('tGrap').textContent = mode === 'mech' ? 'HOOK' : 'BOARD';
+  $('xh').style.display = $('rl').style.display = mode === 'mech' ? '' : 'none';
 }
 function toast(msg, kind = '') {
   const box_ = $('toasts'); const d = document.createElement('div'); d.className = 'toast ' + kind; d.textContent = msg; box_.prepend(d);
@@ -1901,8 +2051,10 @@ addEventListener('keydown', e => {
   if (e.repeat) return; K[e.code] = true; if (!playing) return;
   if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyV') { view = view === 'cockpit' ? 'chase' : 'cockpit'; camSnap = true; M.lookPitch = clamp(M.lookPitch, -0.85, 0.45); if (view === 'cockpit') M.lookYaw = clamp(Math.atan2(Math.sin(M.lookYaw), Math.cos(M.lookYaw)), -2, 2); }
-  if (e.code === 'KeyF') { fireGrapple(); grappleHeld = true; }
-  if (e.code === 'Space') cutGrapples();
+  if (e.code === 'KeyF') { if (mode === 'foot') tryBoard(); else if (mode === 'mech') { fireGrapple(); grappleHeld = true; } }
+  if (e.code === 'Space') jump();
+  if (e.code === 'KeyX') cutGrapples();
+  if (e.code === 'KeyG') tryExit();
   if (e.code === 'KeyH') { hostile = !hostile; toast(hostile ? 'Hostiles active' : 'Hostiles holding fire'); }
   if (e.code === 'KeyN') { spawnHound(); toast('Hound released'); }
   if (e.code === 'KeyR' && M.dead) restart();
@@ -1919,7 +2071,7 @@ canvas.addEventListener('mousedown', e => {
   if (!playing || isTouch) return; initAudio();
   if (document.pointerLockElement !== canvas) { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} }
   if (e.button === 0) fireHeld = true;
-  if (e.button === 2) { fireGrapple(); grappleHeld = true; }
+  if (e.button === 2 && mode === 'mech') { fireGrapple(); grappleHeld = true; }
 });
 addEventListener('mouseup', e => { if (e.button === 0) fireHeld = false; if (e.button === 2) grappleHeld = false; });
 addEventListener('mousemove', e => {
@@ -1929,6 +2081,7 @@ addEventListener('mousemove', e => {
   look(mx, my, 0.0022);
 });
 function look(dx, dy, sens) {
+  if (mode !== 'mech') { pilot.camYaw -= dx * sens; pilot.camPitch = clamp(pilot.camPitch - dy * sens, -1.2, 0.9); return; }
   M.lookYaw -= dx * sens; M.lookPitch = clamp(M.lookPitch - dy * sens, view === 'cockpit' ? -1.1 : -0.85, view === 'cockpit' ? 0.8 : 0.45);
   if (view === 'cockpit') M.lookYaw = clamp(M.lookYaw, -2.0, 2.0);
 }
@@ -1942,8 +2095,9 @@ if (isTouch) {
   addEventListener('touchend', e => { for (const t of e.changedTouches) { if (t.identifier === stickId) { stickId = null; T.mx = T.my = 0; knob.style.transform = ''; } if (t.identifier === lookId) lookId = null; } });
   const hold = (id, down, up) => { const b = $(id); b.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); initAudio(); down(); }, { passive: false }); b.addEventListener('touchend', e => { e.preventDefault(); up && up(); }, { passive: false }); };
   hold('tFire', () => fireHeld = true, () => fireHeld = false);
-  hold('tGrap', () => { fireGrapple(); grappleHeld = true; }, () => grappleHeld = false);
-  hold('tCut', cutGrapples);
+  hold('tGrap', () => { if (mode === 'foot') tryBoard(); else if (mode === 'mech') { fireGrapple(); grappleHeld = true; } }, () => grappleHeld = false);
+  hold('tCut', () => { if (mode === 'mech' && grapples.some(G => G.state !== 'idle')) cutGrapples(); else jump(); });
+  hold('tOut', tryExit);
   hold('tView', () => { view = view === 'cockpit' ? 'chase' : 'cockpit'; if (view === 'cockpit') M.lookYaw = clamp(Math.atan2(Math.sin(M.lookYaw), Math.cos(M.lookYaw)), -2, 2); });
 }
 function fitCamera() { camera.aspect = innerWidth / innerHeight; camera.fov = camera.aspect < 1 ? Math.min(100, 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(42)) / camera.aspect) * 180 / Math.PI) : 66; camera.updateProjectionMatrix(); }
@@ -1962,6 +2116,8 @@ function clearEntities() {
 }
 function buildLevel() {
   clearEntities(); genWorld(SEED); rebuildAll(); resetMech();
+  mode = 'foot'; hatchTarget = 0; pilot.vel.set(0, 0, 0); pilot.yaw = 0; pilot.camYaw = 0; pilot.camPitch = -0.12; pilot.root.visible = true;
+  pilot.pos.set(M.pos.x - 1.2, 0, M.pos.z + 4.2); pilot.pos.y = heightAt(pilot.pos.x, pilot.pos.z, 10); camSnap = true;
   hostile = true; houndTimer = 24; sentryTimer = 0;
   spawnSentries(5);
 }
@@ -1972,8 +2128,8 @@ function restart() {
 function start() {
   initAudio(); $('start').hidden = true; playing = true; document.body.classList.add('playing');
   if (!isTouch) { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} }
-  toast('Bulwark online. Walk out and test the frame.');
-  setTimeout(() => toast('Press V for the cockpit. Keys 1–4 blow off a leg.'), 2600);
+  toast('Your Bulwark is waiting. Climb in.');
+  setTimeout(() => toast('Walk up to it and press F'), 2400);
 }
 $('goBtn').addEventListener('click', start);
 $('againBtn').addEventListener('click', () => { initAudio(); restart(); });
@@ -1982,9 +2138,10 @@ function simulate(dt) {
   updateGrapples(dt);
   updateBody(dt);
   updateLegs(dt);
-  updateAim(dt);
+  updatePilot(dt);
+  if (mode === 'mech') updateAim(dt);
   M.reload -= dt; if (M.reload <= 0 && M.reload > -dt) sfx.reload();
-  if (fireHeld && M.reload <= 0 && !M.dead && playing) fire();
+  if (fireHeld && M.reload <= 0 && !M.dead && playing && mode === 'mech') fire();
   updateShells(dt);
   updateEnemies(dt);
   updateFalling(dt);
@@ -2018,7 +2175,7 @@ requestAnimationFrame(frame);
 setTimeout(() => {
   buildLevel(); ready = true;
   $('goBtn').disabled = false; $('loading').textContent = isTouch ? 'Ready · tap to enter' : 'Ready · the mouse is captured when you enter';
-  window.__game = { heightAt, simulate, rebuildDirty, updateCamera, updateHUD, renderer, scene, setView: v => view = v, THREE, hull, turret, cockpit, camera, M, legs, enemies, falling, explode, destroyLeg, K, T, grapples, get view() { return view; } };
+  window.__game = { pilot, tryBoard, tryExit, jump, getMode: () => mode, heightAt, simulate, rebuildDirty, updateCamera, updateHUD, renderer, scene, setView: v => view = v, THREE, hull, turret, cockpit, camera, M, legs, enemies, falling, explode, destroyLeg, K, T, grapples, get view() { return view; } };
 }, 30);
 </script>
 </body>
